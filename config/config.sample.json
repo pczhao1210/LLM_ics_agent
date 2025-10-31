@@ -46,5 +46,14 @@
       "theater": 1,
       "generic": 1
     }
+  },
+  "auth": {
+    "streamlit": {
+      "username": "admin",
+      "password": "admin123"
+    },
+    "api": {
+      "token": "change_me_api_token"
+    }
   }
 }

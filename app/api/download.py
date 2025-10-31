@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
 from ..services.storage import storage_service
+from .dependencies import verify_api_token
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_api_token)])
 
 @router.get("/ics/{folder_name}")
 async def download_ics(folder_name: str):

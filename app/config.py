@@ -20,7 +20,6 @@ class Settings:
             config.setdefault("openai", {})["api_key"] = os.getenv("OPENAI_API_KEY")
         if os.getenv("OPENAI_BASE_URL"):
             config.setdefault("openai", {})["base_url"] = os.getenv("OPENAI_BASE_URL")
-        
         return config
     
     @property
@@ -81,5 +80,22 @@ class Settings:
     
     def get_reminder_hours(self, ticket_type: str) -> int:
         return self._config.get("ics", {}).get("reminder_hours", {}).get(ticket_type, 1)
+    
+    @property
+    def streamlit_credentials(self) -> Dict[str, Any]:
+        auth_config = self._config.get("auth", {}).get("streamlit", {})
+        username = auth_config.get("username") or os.getenv("STREAMLIT_USERNAME")
+        password = auth_config.get("password") or os.getenv("STREAMLIT_PASSWORD")
+        return {
+            "username": username,
+            "password": password
+        }
+    
+    @property
+    def api_token(self) -> str:
+        token = self._config.get("auth", {}).get("api", {}).get("token")
+        if token:
+            return token
+        return os.getenv("API_AUTH_TOKEN", "")
 
 settings = Settings()

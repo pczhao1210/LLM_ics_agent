@@ -47,14 +47,11 @@ fi
 # 检查端口占用
 check_port() {
     local port=$1
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
-        echo "⚠️  端口 $port 被占用，正在清理..."
-        local pids=$(lsof -Pi :$port -sTCP:LISTEN -t)
-        for pid in $pids; do
-            kill -9 $pid 2>/dev/null
-            echo "  已终止占用端口 $port 的进程: $pid"
-        done
-        sleep 2
+    local pids
+    pids=$(lsof -Pi :$port -sTCP:LISTEN -t 2>/dev/null)
+    if [ -n "$pids" ]; then
+        echo "⚠️  端口 $port 当前有进程占用: $pids"
+        echo "   如非本脚本启动的服务，请手动处理后再运行。"
     fi
 }
 
@@ -70,22 +67,16 @@ cleanup_processes() {
         frontend_port=$(python3 -c "import json; print(json.load(open('config/config.json')).get('frontend', {}).get('port', 8501))" 2>/dev/null || echo 8501)
     fi
     
-    # 检查并清理端口占用
-    check_port $api_port
-    check_port $frontend_port
-    
-    # 查找并杀死相关进程
-    pkill -f "run.py" 2>/dev/null
-    pkill -f "app/start_frontend.py" 2>/dev/null
-    pkill -f "streamlit run app/frontend.py" 2>/dev/null
-    pkill -f "uvicorn" 2>/dev/null
-    
-    # 清理PID文件
+    # 根据PID文件优雅终止进程
     for pid_file in "$PID_FILE" "$SCRIPT_DIR/backend.pid" "$SCRIPT_DIR/frontend.pid"; do
         if [ -f "$pid_file" ]; then
             while read -r pid; do
-                if kill -0 "$pid" 2>/dev/null; then
-                    kill -9 "$pid" 2>/dev/null
+                if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                    kill "$pid" 2>/dev/null
+                    sleep 1
+                    if kill -0 "$pid" 2>/dev/null; then
+                        kill -9 "$pid" 2>/dev/null
+                    fi
                     echo "  已终止进程: $pid"
                 fi
             done < "$pid_file"
@@ -93,7 +84,11 @@ cleanup_processes() {
         fi
     done
     
-    sleep 2
+    # 最终提示端口状态
+    check_port $api_port
+    check_port $frontend_port
+    
+    sleep 1
 }
 
 # 退出时清理
@@ -113,6 +108,14 @@ if [ "$DEBUG" = true ]; then
 else
     LOG_LEVEL="--log-level info"
     STREAMLIT_LOG="--logger.level info"
+fi
+
+# 加载端口配置
+API_PORT=8000
+FRONTEND_PORT=8501
+if [ -f "config/config.json" ]; then
+    API_PORT=$(python3 -c "import json; print(json.load(open('config/config.json')).get('api', {}).get('port', 8000))" 2>/dev/null || echo 8000)
+    FRONTEND_PORT=$(python3 -c "import json; print(json.load(open('config/config.json')).get('frontend', {}).get('port', 8501))" 2>/dev/null || echo 8501)
 fi
 
 # 启动后端服务
@@ -145,14 +148,6 @@ for i in {1..10}; do
     fi
     sleep 1
 done
-
-# 获取端口配置
-API_PORT=8000
-FRONTEND_PORT=8501
-if [ -f "config/config.json" ]; then
-    API_PORT=$(python3 -c "import json; print(json.load(open('config/config.json')).get('api', {}).get('port', 8000))" 2>/dev/null || echo 8000)
-    FRONTEND_PORT=$(python3 -c "import json; print(json.load(open('config/config.json')).get('frontend', {}).get('port', 8501))" 2>/dev/null || echo 8501)
-fi
 
 # 启动前端服务
 echo "🎨 启动前端界面 (端口 $FRONTEND_PORT)..."

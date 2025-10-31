@@ -12,3 +12,10 @@ class ResultResponse(BaseModel):
     data: Optional[TicketData] = None
     ics_url: Optional[str] = None
     error: Optional[str] = None
+
+class ProcessResponse(BaseModel):
+    id: str
+    status: str
+    data: Optional[TicketData] = None
+    ics_url: Optional[str] = None
+    error: Optional[str] = None

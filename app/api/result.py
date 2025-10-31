@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from ..services.async_processor import async_processor
 from ..models.response import ResultResponse
+from .dependencies import verify_api_token
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_api_token)])
 
 @router.get("/result/{folder_name}", response_model=ResultResponse)
 async def get_result(folder_name: str):

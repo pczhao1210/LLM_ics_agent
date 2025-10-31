@@ -10,6 +10,7 @@
 - 🎨 **Web界面** - 直观的Streamlit前端界面
 - ⚙️ **可配置** - 支持OpenAI模型、图片处理等参数配置
 - 📊 **任务管理** - 完整的任务历史记录和文件管理
+- 🔐 **访问控制** - 支持Streamlit登录与API令牌双重认证
 - 🔗 **文件访问** - 支持在线查看图片、JSON结果和下载ICS文件
 
 ## 🚀 快速开始
@@ -55,6 +56,30 @@ export OPENAI_API_KEY="your_api_key_here"
 - 🌐 **前端界面**: http://localhost:8501
 - 📚 **API文档**: http://localhost:8000/docs
 - ❤️ **健康检查**: http://localhost:8000/health
+- 🔑 **登录认证**: 首次访问前端需使用 `config.json` 或环境变量中配置的凭证登录；调用API需携带令牌
+
+## 🐳 Docker部署
+
+```bash
+# 构建镜像
+docker build -t ics-agent .
+
+# 运行容器
+docker run -d \
+  -p 8000:8000 \
+  -p 8501:8501 \
+  -e OPENAI_API_KEY="your_api_key" \
+  -e STREAMLIT_USERNAME="your_username" \
+  -e STREAMLIT_PASSWORD="your_password" \
+  -e API_AUTH_TOKEN="your_api_token" \
+  -v $(pwd)/storage:/app/storage \
+  --name ics-agent \
+  ics-agent
+```
+
+- `storage` 目录挂载到主机以持久化识别结果
+- `STREAMLIT_USERNAME` / `STREAMLIT_PASSWORD` 控制前端登录，`API_AUTH_TOKEN` 用于保护API访问
+- 可根据需要添加 `OPENAI_BASE_URL` 等额外环境变量
 
 ## 🎯 使用方法
 
@@ -90,9 +115,13 @@ export OPENAI_API_KEY="your_api_key_here"
 
 ## 📡 API接口
 
+> 默认情况下，所有API（含静态文件）均需要携带 `Authorization: Bearer <token>` 头部，
+> 或者在URL后追加 `?token=<token>` 进行访问。
+
 ### 上传票据
 ```bash
 curl -X POST "http://localhost:8000/upload" \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@ticket.jpg"
 ```
@@ -105,9 +134,27 @@ curl -X POST "http://localhost:8000/upload" \
 }
 ```
 
+### 一步同步上传并生成ICS
+```bash
+curl -X POST "http://localhost:8000/process" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@ticket.jpg"
+```
+
+**响应示例:**
+```json
+{
+  "id": "2025_01_15_14_30_25_ticket_image",
+  "status": "completed",
+  "data": { "... 识别结果 ..." },
+  "ics_url": "/ics/2025_01_15_14_30_25_ticket_image"
+}
+```
+
 ### 查询结果
 ```bash
-curl "http://localhost:8000/result/{folder_name}"
+curl -H "Authorization: Bearer <token>" "http://localhost:8000/result/{folder_name}"
 ```
 
 **响应示例:**
@@ -143,16 +190,16 @@ curl "http://localhost:8000/result/{folder_name}"
 
 ### 下载ICS文件
 ```bash
-curl "http://localhost:8000/ics/{folder_name}" -o calendar.ics
+curl -H "Authorization: Bearer <token>" "http://localhost:8000/ics/{folder_name}" -o calendar.ics
 ```
 
 ### 访问静态文件
 ```bash
 # 查看原始图片
-curl "http://localhost:8000/storage/{folder_name}/original.jpg"
+curl -H "Authorization: Bearer <token>" "http://localhost:8000/storage/{folder_name}/original.jpg"
 
 # 查看JSON结果
-curl "http://localhost:8000/storage/{folder_name}/result.json"
+curl -H "Authorization: Bearer <token>" "http://localhost:8000/storage/{folder_name}/result.json"
 ```
 
 ## 📁 存储结构
@@ -208,6 +255,18 @@ storage/
 }
 ```
 
+## 🔐 安全与认证
+
+- **Streamlit前端登录**
+  - 配置项：`config.auth.streamlit.username` / `password`
+  - 环境变量：`STREAMLIT_USERNAME` / `STREAMLIT_PASSWORD`（当配置文件未设置时使用）
+  - 未配置凭证时，前端会提示认证已关闭
+- **API令牌认证**
+  - 配置项：`config.auth.api.token`
+  - 环境变量：`API_AUTH_TOKEN`（当配置文件未设置时使用）
+  - 可通过 `Authorization: Bearer <token>` 或 `?token=<token>` 访问受保护接口
+- 建议在公网部署时始终设置上述凭证，并使用HTTPS或反向代理进一步保护流量
+
 ## 🎫 支持的票据类型
 
 - ✈️ **机票** - 自动识别航班信息、起降时间、座位号等
@@ -239,7 +298,7 @@ ics_agent/
 ```
 
 ### 技术栈
-- **后端**: FastAPI + Python 3.12
+- **后端**: FastAPI + Python 3.11
 - **前端**: Streamlit
 - **AI模型**: OpenAI GPT-4 Vision
 - **图片处理**: Pillow + OpenCV

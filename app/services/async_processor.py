@@ -1,51 +1,71 @@
 import asyncio
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any
-from datetime import datetime
 
 from .vision import vision_service
 from .ics import ics_service
 from .storage import storage_service
 from .image_processor import image_processor
-from ..config import settings
 
 class AsyncProcessor:
     def __init__(self):
-        self.executor = ThreadPoolExecutor(max_workers=settings.max_workers)
-        self.tasks: Dict[str, Any] = {}
+        pass
     
-    async def process_ticket(self, folder_name: str, image_content: bytes) -> None:
-        """异步处理票据识别"""
-        try:
-            # 更新状态为处理中
+    async def _run_pipeline(self, folder_name: str, image_content: bytes, persist_status: bool) -> Dict[str, Any]:
+        """执行票据识别流水线，可选持久化状态"""
+        if persist_status:
             await storage_service.save_task_status(folder_name, "processing")
-            
-            # 图片预处理
+        
+        try:
             processed_image = image_processor.process_image(image_content)
-            
-            # 执行视觉识别
             result = await vision_service.extract_ticket_info(processed_image)
             
             if "error" in result:
-                await storage_service.save_task_status(folder_name, "failed", {"error": result["error"]})
-                return
+                error_msg = result["error"]
+                if persist_status:
+                    await storage_service.save_task_status(folder_name, "failed", {"error": error_msg})
+                return {
+                    "id": folder_name,
+                    "status": "failed",
+                    "error": error_msg
+                }
             
-            # 添加ID
             result["id"] = folder_name
             
-            # 保存识别结果
-            await storage_service.save_result(folder_name, result)
+            if persist_status:
+                await storage_service.save_result(folder_name, result)
             
-            # 生成ICS文件
             ics_content = ics_service.generate_ics(result)
             await storage_service.save_ics(folder_name, ics_content)
             
-            # 更新状态为完成
-            await storage_service.save_task_status(folder_name, "completed", result)
+            if persist_status:
+                await storage_service.save_task_status(folder_name, "completed", result)
             
+            return {
+                "id": folder_name,
+                "status": "completed",
+                "data": result,
+                "ics_url": f"/ics/{folder_name}"
+            }
+        
         except Exception as e:
-            await storage_service.save_task_status(folder_name, "failed", {"error": str(e)})
+            error_msg = str(e)
+            if persist_status:
+                await storage_service.save_task_status(folder_name, "failed", {"error": error_msg})
+            return {
+                "id": folder_name,
+                "status": "failed",
+                "error": error_msg
+            }
+    
+    async def process_ticket(self, folder_name: str, image_content: bytes) -> None:
+        """异步处理票据识别"""
+        await self._run_pipeline(folder_name, image_content, persist_status=True)
+    
+    async def process_ticket_sync(self, filename: str, image_content: bytes) -> Dict[str, Any]:
+        """同步处理票据识别并返回最终结果"""
+        folder_name = await storage_service.save_image(str(uuid.uuid4()), filename, image_content)
+        return await self._run_pipeline(folder_name, image_content, persist_status=False)
     
     async def submit_task(self, filename: str, image_content: bytes) -> str:
         """提交处理任务"""
